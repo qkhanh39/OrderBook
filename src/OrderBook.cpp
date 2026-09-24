@@ -4,29 +4,29 @@
 #include "Order.h"
 #include "Side.h"
 
-void OrderBook::addOrder(std::shared_ptr<Order> order)
+std::vector<Trade> OrderBook::addOrder(std::shared_ptr<Order> order)
 {
     if (order->getRemainingQuantity() == 0)
     {
-        return;
+        return {};
     }
 
     if (orders_.find(order->getOrderId()) != orders_.end())
     {
-        return;
+        return {};
     }
 
-    matchOrder(order);
+    std::vector<Trade> trades = matchOrder(order);
 
     if (order->getRemainingQuantity() == 0)
     {
-        return;
+        return trades;
     }
 
     auto [_, inserted] = orders_.insert({order->getOrderId(), order});
     if (!inserted)
     {
-        return;
+        return trades;
     }
 
     if (order->getSide() == Side::Buy)
@@ -45,6 +45,8 @@ void OrderBook::addOrder(std::shared_ptr<Order> order)
 
         it->second.addOrder(order);
     }
+
+    return trades;
 }
 
 void OrderBook::removeOrder(OrderId orderId)
@@ -79,8 +81,9 @@ void OrderBook::removeOrder(OrderId orderId)
     orders_.erase(found);
 }
 
-void OrderBook::matchOrder(std::shared_ptr<Order> order)
+std::vector<Trade> OrderBook::matchOrder(std::shared_ptr<Order> order)
 {
+    std::vector<Trade> trades{};
     if (order->getSide() == Side::Buy)
     {
         while (!asks_.empty())
@@ -89,10 +92,12 @@ void OrderBook::matchOrder(std::shared_ptr<Order> order)
 
             if (order->getPrice() < askIt->first)
             {
-                return;
+                return trades;
             }
 
             auto &matchedPriceLevel = askIt->second;
+            Price tradePrice = matchedPriceLevel.getPrice();
+
             auto firstOrder = matchedPriceLevel.getFirst();
             Quantity tradeQuantity = std::min(
                 firstOrder->getRemainingQuantity(),
@@ -112,9 +117,15 @@ void OrderBook::matchOrder(std::shared_ptr<Order> order)
                 asks_.erase(askIt);
             }
 
+            trades.push_back(Trade{
+                order->getOrderId(),
+                firstOrder->getOrderId(),
+                tradePrice,
+                tradeQuantity});
+
             if (order->getRemainingQuantity() == 0)
             {
-                return;
+                return trades;
             }
         }
     }
@@ -126,10 +137,12 @@ void OrderBook::matchOrder(std::shared_ptr<Order> order)
 
             if (order->getPrice() > buyIt->first)
             {
-                return;
+                return trades;
             }
 
             auto &matchedPriceLevel = buyIt->second;
+            Price tradePrice = matchedPriceLevel.getPrice();
+
             auto firstOrder = matchedPriceLevel.getFirst();
             Quantity tradeQuantity = std::min(
                 order->getRemainingQuantity(),
@@ -149,12 +162,20 @@ void OrderBook::matchOrder(std::shared_ptr<Order> order)
                 bids_.erase(buyIt);
             }
 
+            trades.push_back(Trade{
+                firstOrder->getOrderId(),
+                order->getOrderId(),
+                tradePrice,
+                tradeQuantity});
+
             if (order->getRemainingQuantity() == 0)
             {
-                return;
+                return trades;
             }
         }
     }
+
+    return trades;
 }
 
 bool OrderBook::containsOrder(OrderId orderId) const

@@ -5,6 +5,7 @@
 #include "Order.h"
 #include "OrderBook.h"
 #include "Side.h"
+#include "Trade.h"
 
 void testAddOrderNoMatch()
 {
@@ -16,10 +17,11 @@ void testAddOrderNoMatch()
         100,
         50);
 
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
     assert(buy->getRemainingQuantity() == 50);
     assert(book.containsOrder(1));
+    assert(trades.empty());
 
     std::cout << "PASS: testAddOrderNoMatch\n";
 }
@@ -41,19 +43,19 @@ void testIncomingBuyPartiallyFillsAsk()
         40);
 
     book.addOrder(sell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Buy 40 matches Sell 40.
     assert(sell->getRemainingQuantity() == 60);
-
-    // Incoming buy is completely filled.
     assert(buy->getRemainingQuantity() == 0);
 
-    // Resting sell remains active.
     assert(book.containsOrder(1));
-
-    // Fully filled incoming order is not stored.
     assert(!book.containsOrder(2));
+
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 2);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 40);
 
     std::cout << "PASS: testIncomingBuyPartiallyFillsAsk\n";
 }
@@ -75,19 +77,19 @@ void testIncomingBuyPartiallyRemains()
         150);
 
     book.addOrder(sell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Sell is completely filled.
     assert(sell->getRemainingQuantity() == 0);
-
-    // Buy has 50 remaining and becomes a resting order.
     assert(buy->getRemainingQuantity() == 50);
 
-    // Filled sell is removed from active orders.
     assert(!book.containsOrder(1));
-
-    // Remaining buy is active.
     assert(book.containsOrder(2));
+
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 2);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 100);
 
     std::cout << "PASS: testIncomingBuyPartiallyRemains\n";
 }
@@ -109,13 +111,19 @@ void testExactMatch()
         50);
 
     book.addOrder(sell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
     assert(sell->getRemainingQuantity() == 0);
     assert(buy->getRemainingQuantity() == 0);
 
     assert(!book.containsOrder(1));
     assert(!book.containsOrder(2));
+
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 2);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 50);
 
     std::cout << "PASS: testExactMatch\n";
 }
@@ -137,15 +145,15 @@ void testBuyDoesNotMatchHigherAsk()
         50);
 
     book.addOrder(sell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Buy price 100 < Ask price 101.
-    // Therefore no trade.
     assert(sell->getRemainingQuantity() == 50);
     assert(buy->getRemainingQuantity() == 50);
 
     assert(book.containsOrder(1));
     assert(book.containsOrder(2));
+
+    assert(trades.empty());
 
     std::cout << "PASS: testBuyDoesNotMatchHigherAsk\n";
 }
@@ -167,15 +175,15 @@ void testSellDoesNotMatchLowerBid()
         50);
 
     book.addOrder(buy);
-    book.addOrder(sell);
+    std::vector<Trade> trades = book.addOrder(sell);
 
-    // Sell price 101 > Bid price 100.
-    // Therefore no trade.
     assert(buy->getRemainingQuantity() == 50);
     assert(sell->getRemainingQuantity() == 50);
 
     assert(book.containsOrder(1));
     assert(book.containsOrder(2));
+
+    assert(trades.empty());
 
     std::cout << "PASS: testSellDoesNotMatchLowerBid\n";
 }
@@ -204,12 +212,8 @@ void testBuyMatchesMultipleAskLevels()
 
     book.addOrder(sell1);
     book.addOrder(sell2);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Buy 120:
-    // 50 @ 100
-    // 50 @ 101
-    // 20 remains.
     assert(sell1->getRemainingQuantity() == 0);
     assert(sell2->getRemainingQuantity() == 0);
     assert(buy->getRemainingQuantity() == 20);
@@ -217,6 +221,20 @@ void testBuyMatchesMultipleAskLevels()
     assert(!book.containsOrder(1));
     assert(!book.containsOrder(2));
     assert(book.containsOrder(3));
+
+    assert(trades.size() == 2);
+
+    // Best ask first.
+    assert(trades[0].buyOrderId == 3);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 50);
+
+    // Then next ask level.
+    assert(trades[1].buyOrderId == 3);
+    assert(trades[1].sellOrderId == 2);
+    assert(trades[1].price == 101);
+    assert(trades[1].quantity == 50);
 
     std::cout << "PASS: testBuyMatchesMultipleAskLevels\n";
 }
@@ -245,12 +263,8 @@ void testSellMatchesMultipleBidLevels()
 
     book.addOrder(buy1);
     book.addOrder(buy2);
-    book.addOrder(sell);
+    std::vector<Trade> trades = book.addOrder(sell);
 
-    // Sell 120:
-    // 50 @ 101
-    // 50 @ 100
-    // 20 remains.
     assert(buy1->getRemainingQuantity() == 0);
     assert(buy2->getRemainingQuantity() == 0);
     assert(sell->getRemainingQuantity() == 20);
@@ -258,6 +272,20 @@ void testSellMatchesMultipleBidLevels()
     assert(!book.containsOrder(1));
     assert(!book.containsOrder(2));
     assert(book.containsOrder(3));
+
+    assert(trades.size() == 2);
+
+    // Best bid first.
+    assert(trades[0].buyOrderId == 1);
+    assert(trades[0].sellOrderId == 3);
+    assert(trades[0].price == 101);
+    assert(trades[0].quantity == 50);
+
+    // Then next bid level.
+    assert(trades[1].buyOrderId == 2);
+    assert(trades[1].sellOrderId == 3);
+    assert(trades[1].price == 100);
+    assert(trades[1].quantity == 50);
 
     std::cout << "PASS: testSellMatchesMultipleBidLevels\n";
 }
@@ -286,19 +314,29 @@ void testBuyFollowsFIFOAtSamePrice()
 
     book.addOrder(sell1);
     book.addOrder(sell2);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // FIFO:
-    // sell1 gets filled first: 50
-    // sell2 gets filled next: 20
     assert(sell1->getRemainingQuantity() == 0);
     assert(sell2->getRemainingQuantity() == 30);
-
     assert(buy->getRemainingQuantity() == 0);
 
     assert(!book.containsOrder(1));
     assert(book.containsOrder(2));
     assert(!book.containsOrder(3));
+
+    assert(trades.size() == 2);
+
+    // FIFO: sell1 is matched first.
+    assert(trades[0].buyOrderId == 3);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 50);
+
+    // Then sell2.
+    assert(trades[1].buyOrderId == 3);
+    assert(trades[1].sellOrderId == 2);
+    assert(trades[1].price == 100);
+    assert(trades[1].quantity == 20);
 
     std::cout << "PASS: testBuyFollowsFIFOAtSamePrice\n";
 }
@@ -327,19 +365,29 @@ void testSellFollowsFIFOAtSamePrice()
 
     book.addOrder(buy1);
     book.addOrder(buy2);
-    book.addOrder(sell);
+    std::vector<Trade> trades = book.addOrder(sell);
 
-    // FIFO:
-    // buy1 gets filled first: 50
-    // buy2 gets filled next: 20
     assert(buy1->getRemainingQuantity() == 0);
     assert(buy2->getRemainingQuantity() == 30);
-
     assert(sell->getRemainingQuantity() == 0);
 
     assert(!book.containsOrder(1));
     assert(book.containsOrder(2));
     assert(!book.containsOrder(3));
+
+    assert(trades.size() == 2);
+
+    // FIFO: buy1 is matched first.
+    assert(trades[0].buyOrderId == 1);
+    assert(trades[0].sellOrderId == 3);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 50);
+
+    // Then buy2.
+    assert(trades[1].buyOrderId == 2);
+    assert(trades[1].sellOrderId == 3);
+    assert(trades[1].price == 100);
+    assert(trades[1].quantity == 20);
 
     std::cout << "PASS: testSellFollowsFIFOAtSamePrice\n";
 }
@@ -368,17 +416,21 @@ void testBestAskIsMatchedFirst()
 
     book.addOrder(expensiveSell);
     book.addOrder(cheapSell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Best ask = 100, so the cheaper ask must be matched first.
     assert(cheapSell->getRemainingQuantity() == 20);
     assert(expensiveSell->getRemainingQuantity() == 50);
-
     assert(buy->getRemainingQuantity() == 0);
 
     assert(book.containsOrder(1));
     assert(book.containsOrder(2));
     assert(!book.containsOrder(3));
+
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 3);
+    assert(trades[0].sellOrderId == 2);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 30);
 
     std::cout << "PASS: testBestAskIsMatchedFirst\n";
 }
@@ -407,17 +459,21 @@ void testBestBidIsMatchedFirst()
 
     book.addOrder(cheapBuy);
     book.addOrder(expensiveBuy);
-    book.addOrder(sell);
+    std::vector<Trade> trades = book.addOrder(sell);
 
-    // Best bid = 102, so the more expensive bid must be matched first.
     assert(expensiveBuy->getRemainingQuantity() == 20);
     assert(cheapBuy->getRemainingQuantity() == 50);
-
     assert(sell->getRemainingQuantity() == 0);
 
     assert(book.containsOrder(1));
     assert(book.containsOrder(2));
     assert(!book.containsOrder(3));
+
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 2);
+    assert(trades[0].sellOrderId == 3);
+    assert(trades[0].price == 102);
+    assert(trades[0].quantity == 30);
 
     std::cout << "PASS: testBestBidIsMatchedFirst\n";
 }
@@ -470,7 +526,6 @@ void testRemoveNonExistingOrder()
 {
     OrderBook book;
 
-    // Should simply do nothing.
     book.removeOrder(999);
 
     assert(!book.containsOrder(999));
@@ -495,14 +550,13 @@ void testDuplicateActiveOrderId()
         100);
 
     book.addOrder(buy1);
-    book.addOrder(buy2);
+    std::vector<Trade> trades = book.addOrder(buy2);
 
-    // The second order has the same active OrderId,
-    // so it must be rejected.
     assert(buy1->getRemainingQuantity() == 50);
     assert(buy2->getRemainingQuantity() == 100);
 
     assert(book.containsOrder(1));
+    assert(trades.empty());
 
     std::cout << "PASS: testDuplicateActiveOrderId\n";
 }
@@ -517,10 +571,11 @@ void testZeroQuantityOrder()
         100,
         0);
 
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
     assert(buy->getRemainingQuantity() == 0);
     assert(!book.containsOrder(1));
+    assert(trades.empty());
 
     std::cout << "PASS: testZeroQuantityOrder\n";
 }
@@ -542,24 +597,28 @@ void testFilledOrderCanReuseId()
         50);
 
     book.addOrder(sell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Both are completely filled.
     assert(!book.containsOrder(1));
     assert(!book.containsOrder(2));
 
-    // OrderId 1 is no longer active.
-    // In our v1 design, it can therefore be reused.
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 2);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 50);
+
     auto newBuy = std::make_shared<Order>(
         1,
         Side::Buy,
         99,
         20);
 
-    book.addOrder(newBuy);
+    trades = book.addOrder(newBuy);
 
     assert(book.containsOrder(1));
     assert(newBuy->getRemainingQuantity() == 20);
+    assert(trades.empty());
 
     std::cout << "PASS: testFilledOrderCanReuseId\n";
 }
@@ -581,13 +640,17 @@ void testPartialFillThenCancel()
         40);
 
     book.addOrder(sell);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Sell has 60 remaining.
     assert(sell->getRemainingQuantity() == 60);
     assert(book.containsOrder(1));
 
-    // Cancel the remaining sell quantity.
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 2);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 40);
+
     book.removeOrder(1);
 
     assert(!book.containsOrder(1));
@@ -620,9 +683,8 @@ void testIncomingOrderCannotMatchAfterItsQuantityIsExhausted()
 
     book.addOrder(sell1);
     book.addOrder(sell2);
-    book.addOrder(buy);
+    std::vector<Trade> trades = book.addOrder(buy);
 
-    // Only sell1 should be touched.
     assert(sell1->getRemainingQuantity() == 0);
     assert(sell2->getRemainingQuantity() == 50);
     assert(buy->getRemainingQuantity() == 0);
@@ -630,6 +692,12 @@ void testIncomingOrderCannotMatchAfterItsQuantityIsExhausted()
     assert(!book.containsOrder(1));
     assert(book.containsOrder(2));
     assert(!book.containsOrder(3));
+
+    assert(trades.size() == 1);
+    assert(trades[0].buyOrderId == 3);
+    assert(trades[0].sellOrderId == 1);
+    assert(trades[0].price == 100);
+    assert(trades[0].quantity == 50);
 
     std::cout << "PASS: testIncomingOrderCannotMatchAfterItsQuantityIsExhausted\n";
 }
